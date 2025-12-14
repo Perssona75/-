@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title if title else "Медицинская система" }}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet">
+
+    <style>
+        body { padding-top: 70px; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-primary fixed-top">
+    <div class="container">
+        <a class="navbar-brand" href="/">Медицинская база</a>
+    </div>
+</nav>
+
+<div class="container mt-4">
+
+    <!-- Flash messages (единый блок) -->
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-warning" id="flash-box">
+          {% for msg in messages %}
+            <div>{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const flashBox = document.getElementById("flash-box");
+    if (flashBox) {
+        setTimeout(() => {
+            flashBox.style.transition = "opacity 0.5s";
+            flashBox.style.opacity = "0";
+            setTimeout(() => flashBox.remove(), 500);
+        }, 2500);
+    }
+});
+</script>
+
+</body>
+</html>

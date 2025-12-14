@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-3">
+    Пациент: {{ patient.name }} {{ patient.last_name }}
+</h2>
+
+<p><strong>Дата рождения:</strong> {{ patient.birth_date }}</p>
+
+<hr>
+
+<h4 class="mt-4">Назначить диагноз</h4>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="post" action="/patients/{{ patient.id }}/assign" class="row g-3">
+
+            <!-- Диагноз с подсказками -->
+            <div class="col-md-6">
+                <label class="form-label">Диагноз</label>
+
+                <div class="position-relative">
+                    <textarea name="diagnosis" id="diag_input"
+                              class="form-control"
+                              autocomplete="off"
+                              required></textarea>
+
+                    <!-- Выпадающий список -->
+                    <div id="suggestions"
+                         class="list-group position-absolute w-100"
+                         style="z-index: 10; display: none; max-height: 150px; overflow-y: auto;">
+
+                        {% for s in diag_suggestions %}
+                        <button type="button"
+                                class="list-group-item list-group-item-action suggestion-item">
+                            {{ s }}
+                        </button>
+                        {% endfor %}
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">Дата</label>
+                <input type="date" name="diagnosis_date"
+                       value="{{ current_date }}"
+                       class="form-control" required>
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end">
+                <button class="btn btn-primary w-100">Назначить</button>
+            </div>
+
+        </form>
+    </div>
+</div>
+
+<h4>История диагнозов</h4>
+
+<table class="table table-bordered table-hover">
+    <thead class="table-secondary">
+    <tr>
+        <th>ID</th>
+        <th>Диагноз</th>
+        <th>Дата</th>
+        <th></th>
+    </tr>
+    </thead>
+
+    <tbody>
+    {% for d in diagnoses %}
+        <tr>
+            <td>{{ d.id }}</td>
+            <td>{{ d.diagnosis }}</td>
+            <td>{{ d.diagnosis_date }}</td>
+
+            <td class="text-end">
+                <a href="/patient_diagnosis/{{ d.id }}/delete"
+                    class="btn btn-outline-danger btn-sm">
+                    Удалить
+                </a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<!-- Пагинация -->
+{% if pages > 1 %}
+<nav>
+  <ul class="pagination justify-content-center mt-3">
+
+    {% if page > 1 %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page - 1 }}">Назад</a>
+      </li>
+    {% endif %}
+
+    {% for p in range(1, pages + 1) %}
+      <li class="page-item {% if page == p %}active{% endif %}">
+        <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+      </li>
+    {% endfor %}
+
+    {% if page < pages %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page + 1 }}">Вперёд</a>
+      </li>
+    {% endif %}
+
+  </ul>
+</nav>
+{% endif %}
+
+<!-- JAVASCRIPT для подсказок -->
+<script>
+    const input = document.getElementById("diag_input");
+    const box = document.getElementById("suggestions");
+    const items = document.querySelectorAll(".suggestion-item");
+
+    input.addEventListener("input", () => {
+        const val = input.value.toLowerCase();
+        let visible = false;
+
+        items.forEach(btn => {
+            if (btn.innerText.toLowerCase().includes(val) && val.length > 0) {
+                btn.style.display = "block";
+                visible = true;
+            } else {
+                btn.style.display = "none";
+            }
+        });
+
+        box.style.display = visible ? "block" : "none";
+    });
+
+    items.forEach(btn => {
+        btn.addEventListener("click", () => {
+            input.value = btn.innerText;
+            box.style.display = "none";
+        });
+    });
+
+    // скрытие на клик вне списка
+    document.addEventListener("click", (e) => {
+        if (!box.contains(e.target) && e.target !== input) {
+            box.style.display = "none";
+        }
+    });
+</script>
+
+{% endblock %}

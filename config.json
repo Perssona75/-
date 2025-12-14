@@ -1,0 +1,12 @@
+{
+  "host": "127.0.0.1",
+  "port": 5000,
+  "debug": true,
+  "page": 5,
+  "database": "clinic.db",
+  "LOGGING": {
+        "LOG_FILE": "logs/service.log",
+        "MAX_BYTES": 100000,
+        "BACKUP_COUNT": 10
+  }
+}
