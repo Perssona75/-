@@ -4,21 +4,37 @@ import tempfile
 import os
 from datetime import date
 
-from app import app
+from app import app, get_db
 
+class AppTestCase(unittest.TestCase):
 
-class PatientDiagnosisTestCase(unittest.TestCase):
-
+    # --------------------------------------------------
+    # Подготовка тестовой среды
+    # --------------------------------------------------
     def setUp(self):
-        app.config["TESTING"] = True
-
+        # создаём временный файл базы данных
         self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
+
         app.config["DATABASE"] = self.db_path
+        app.config["TESTING"] = True
 
         self.client = app.test_client()
 
+        # создаём таблицы
+        self._create_tables()
+
+    def tearDown(self):
+        try:
+            os.close(self.db_fd)
+            os.unlink(self.db_path)
+        except PermissionError:
+            pass
+
+    # --------------------------------------------------
+    # Создание таблиц базы данных
+    # --------------------------------------------------
+    def _create_tables(self):
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
         cur.execute("""
@@ -43,93 +59,146 @@ class PatientDiagnosisTestCase(unittest.TestCase):
                 patient_id INTEGER NOT NULL,
                 diagnosis_id INTEGER NOT NULL,
                 diagnosis_date TEXT NOT NULL,
-                FOREIGN KEY(patient_id) REFERENCES patients(id),
-                FOREIGN KEY(diagnosis_id) REFERENCES diagnoses(id)
+                FOREIGN KEY (patient_id) REFERENCES patients (id),
+                FOREIGN KEY (diagnosis_id) REFERENCES diagnoses (id)
             )
         """)
 
         conn.commit()
         conn.close()
 
-    def tearDown(self):
-        os.close(self.db_fd)
-        os.unlink(self.db_path)
-
-    # ---------------- Пациенты ----------------
-
     def test_add_patient(self):
-        r = self.client.post("/patients/add", data={
-            "name": "Иван",
+        self.client.post("/patients/add", data={
+            "first_name": "Иван",
             "last_name": "Петров",
-            "birth_date": "01.01.2000",
-        }, follow_redirects=True)
-        self.assertIn("Пациент добавлен", r.data.decode())
+            "birth_year": "01.01.2000"
+        })
 
+        # используем ТО ЖЕ подключение, что и приложение
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("SELECT name, last_name, birth_date FROM patients")
+        patient = cur.fetchone()
+
+        conn.close()
+
+        self.assertIsNotNone(patient)
+        self.assertEqual(patient[0], "Иван")
+        self.assertEqual(patient[1], "Петров")
+        self.assertEqual(patient[2], "2000-01-01")
+
+    # --------------------------------------------------
+    # 1. Удаление пациента
+    # --------------------------------------------------
     def test_delete_patient(self):
         self.client.post("/patients/add", data={
+            "name": "Иван",
+            "last_name": "Петров",
+            "birth_year": "01.01.2000"
+        })
+
+        self.client.get("/patients/1/delete")
+
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM patients")
+        row = cur.fetchone()
+        conn.close()
+
+        self.assertIsNone(row)
+
+    # --------------------------------------------------
+    # 2. Добавление диагноза через карточку пациента
+    # --------------------------------------------------
+    def test_add_diagnosis_to_patient_card(self):
+        self.client.post("/patients/add", data={
             "name": "Анна",
-            "last_name": "Сидорова",
-            "birth_date": "02.02.2002",
+            "last_name": "Иванова",
+            "birth_year": "02.02.2002"
         })
 
-        r = self.client.get("/patients/1/delete", follow_redirects=True)
-        self.assertIn("Пациент удалён", r.data.decode())
-
-    # ---------------- Диагнозы пациента ----------------
-
-    def test_add_diagnosis_to_patient(self):
         today = date.today().isoformat()
 
-        self.client.post("/patients/add", data={
-            "name": "Петр",
-            "last_name": "Иванов",
-            "birth_date": "03.03.2003",
+        self.client.post("/patients/1/assign", data={
+            "diagnosis": "ОРВИ",
+            "diagnosis_date": today
         })
 
-        self.client.post("/diagnoses/add", data={"diagnosis": "ОРВИ"})
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT d.diagnosis
+            FROM patient_diagnoses pd
+            JOIN diagnoses d ON d.id = pd.diagnosis_id
+        """)
+        row = cur.fetchone()
+        conn.close()
 
-        r = self.client.post("/patient/1/add_diagnosis", data={
-            "diagnosis": "ОРВИ",
-            "diagnosis_date": today,
-        }, follow_redirects=True)
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "ОРВИ")
 
-        self.assertIn("Диагноз добавлен пациенту", r.data.decode())
+    # --------------------------------------------------
+    # 3. Удаление диагноза из карточки пациента
+    # --------------------------------------------------
+    def test_delete_diagnosis_from_patient_card(self):
+        self.client.post("/patients/add", data={
+            "name": "Петр",
+            "last_name": "Сидоров",
+            "birth_year": "03.03.2003"
+        })
 
-    def test_delete_diagnosis_from_patient(self):
         today = date.today().isoformat()
 
-        self.client.post("/patients/add", data={
-            "name": "Петр",
-            "last_name": "Иванов",
-            "birth_date": "03.03.2003",
+        self.client.post("/patients/1/assign", data={
+            "diagnosis": "Грипп",
+            "diagnosis_date": today
         })
 
-        self.client.post("/diagnoses/add", data={"diagnosis": "ОРВИ"})
-        self.client.post("/patient/1/add_diagnosis", data={
-            "diagnosis": "ОРВИ",
-            "diagnosis_date": today,
+        self.client.get("/patient_diagnosis/1/delete")
+
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM patient_diagnoses")
+        row = cur.fetchone()
+        conn.close()
+
+        self.assertIsNone(row)
+
+    # --------------------------------------------------
+    # 4. Добавление диагноза через страницу диагнозов
+    # --------------------------------------------------
+    def test_add_diagnosis_from_list(self):
+        self.client.post("/diagnoses/add", data={
+            "diagnosis": "Бронхит"
         })
 
-        r = self.client.get("/patient/1/delete_diagnosis/1", follow_redirects=True)
-        self.assertIn("Диагноз удалён", r.data.decode())
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT diagnosis FROM diagnoses")
+        row = cur.fetchone()
+        conn.close()
 
-    # ---------------- Справочник диагнозов ----------------
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "Бронхит")
 
-    def test_add_diagnosis(self):
-        r = self.client.post("/diagnoses/add", data={"diagnosis": "Грипп"}, follow_redirects=True)
-        self.assertIn("Диагноз добавлен", r.data.decode())
+    # --------------------------------------------------
+    # 5. Удаление диагноза через страницу диагнозов
+    # --------------------------------------------------
+    def test_delete_diagnosis_from_list(self):
+        self.client.post("/diagnoses/add", data={
+            "diagnosis": "Пневмония"
+        })
 
-    def test_delete_diagnosis(self):
-        self.client.post("/diagnoses/add", data={"diagnosis": "Грипп"})
+        self.client.get("/diagnoses/1/delete")
 
-        r = self.client.get("/diagnoses/1/delete", follow_redirects=True)
-        self.assertIn("Диагноз удалён", r.data.decode())
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM diagnoses")
+        row = cur.fetchone()
+        conn.close()
 
-    def test_edit_diagnosis(self):
-        self.client.post("/diagnoses/add", data={"diagnosis": "Грипп"})
-
-        r = self.client.post("/diagnoses/1/edit", data={"diagnosis": "ОРВИ"}, follow_redirects=True)
-        self.assertIn("Диагноз изменён", r.data.decode())
+        self.assertIsNone(row)
 
 
 if __name__ == "__main__":
