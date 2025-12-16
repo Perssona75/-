@@ -7,6 +7,7 @@
   "LOGGING": {
         "LOG_FILE": "logs/service.log",
         "MAX_BYTES": 100000,
-        "BACKUP_COUNT": 10
+        "BACKUP_COUNT": 10,
+        "LEVEL": "INFO"
   }
 }
